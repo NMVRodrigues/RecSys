@@ -5,7 +5,7 @@ import pandas as pd
 
 from prepare_data import prepare_ml
 
-from utils import damped_mean
+from utils import get_ml_ratings_stats
 
 import sys
 
@@ -19,6 +19,10 @@ if __name__ == "__main__":
         help="path to dataset folder to load")
 
     parser.add_argument(
+        '--rec_type', dest='rec_type', type=str, default='damped_mean',
+        help="Type of recommendation to be used, currently supports [damped_mean]")
+
+    parser.add_argument(
         '--seed', dest='seed', type=int, default=None,
         help="Seed for RNG reproducibility")
 
@@ -30,11 +34,9 @@ if __name__ == "__main__":
 
     movies, ratings = prepare_ml(args.dataset)
 
-    damped_mean(ratings, 'rating', 'movieId', 10)
+    get_ml_ratings_stats(movies, ratings)
 
-    movies['rating_damped_mean'] = movies['movieId'].map(ratings['rating_damped_mean'])
-    movies['n_ratings'] = movies['movieId'].map(ratings.groupby("movieId")["rating"].count())
-    movies = movies.sort_values(by='rating_damped_mean', ascending=False).reset_index()
+    movies = movies.sort_values(by='damped_mean_ratings', ascending=False).reset_index()
 
-    for i in range(100):
-        print(f'{i}\t{movies["title"][i]}\tvotes={movies["n_ratings"][i]}\tdmean={movies["rating_damped_mean"][i]}')
+    for i in range(10):
+        print(f'{i+1}\t{movies["title"][i]}\tvotes={movies["num_ratings"][i]}\tdmean={movies[f"{args.rec_type}_ratings"][i]}')
