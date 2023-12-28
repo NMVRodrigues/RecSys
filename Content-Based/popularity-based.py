@@ -1,13 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 import argparse
 import random
 import numpy as np
-import pandas as pd
 
-from prepare_data import prepare_ml
-
-from utils import get_ml_ratings_stats
-
-import sys
+from utils.mlense_functions import prepare_ml, get_ml_ratings_stats
 
 
 if __name__ == "__main__":
