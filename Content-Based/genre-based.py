@@ -1,9 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-
 import argparse
 import random
+import time
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 import numpy as np
 
 from sklearn.metrics.pairwise import linear_kernel
@@ -18,7 +19,8 @@ if __name__ == "__main__":
 
     # data
     parser.add_argument(
-        '--dataset',dest='dataset', type=str, required=True,
+        '--dataset',dest='dataset', type=str,
+        default='C://Users//Utilizador//Desktop//RecSys//Datasets//ml-small',
         help="path to dataset folder to load [only supports movie-lense for now]")
 
     parser.add_argument(
@@ -39,8 +41,17 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     rng = np.random.default_rng(args.seed)
 
-    movies, _ = prepare_ml(os.path.join('Datasets', args.dataset))
+    t1 = time.time()
+
+    movies, _ = prepare_ml(args.dataset)
+    print(f'loading time {time.time() - t1}')
+    t1 = time.time()
     movies = fix_ml(movies)
+
+    print(f'fixing time {time.time() - t1}')
+
+
+    t1 = time.time()
 
     docs = []
     document_words = []
@@ -50,10 +61,21 @@ if __name__ == "__main__":
 
     tfidf_matrix = tfidf(docs, document_words, True)
 
+    print(f'tfidf time {time.time() - t1}')
+
+    t1 = time.time()
+
     # create the cosine similarity matrix
     sim_matrix = linear_kernel(tfidf_matrix, tfidf_matrix)
 
+    print(f'cosine time {time.time() - t1}')
+    t1 = time.time()
+
     closest_title, distance_score = find_closest_title(movies, args.movie)
+
+    print(f'closest time {time.time() - t1}')
+
+    t1 = time.time()
     # When a user does not make misspellings
     if distance_score == 100:
         movie_index = get_index_from_title(movies, closest_title)
@@ -62,9 +84,10 @@ if __name__ == "__main__":
         similar_movies = list(
             filter(lambda x: x[0] != int(movie_index), sorted(movie_list, key=lambda x: x[1], reverse=True)))
 
-        print('Here\'s the list of movies similar to ' + '\033[1m' + str(closest_title) + '\033[0m' + '.\n')
+        #print('Here\'s the list of movies similar to ' + '\033[1m' + str(closest_title) + '\033[0m' + '.\n')
         for i, s in similar_movies[:args.n_rec]:
-            print(get_title_from_index(movies=movies, index=i))
+            #print(get_title_from_index(movies=movies, index=i))
+            pass
     # When a user makes misspellings
     else:
         print('Did you mean ' + '\033[1m' + str(closest_title) + '\033[0m' + '?', '\n')
@@ -75,3 +98,5 @@ if __name__ == "__main__":
         print('Here\'s the list of movies similar to ' + '\033[1m' + str(closest_title) + '\033[0m' + '.\n')
         for i, s in similar_movies[:args.n_rec]:
             print(get_title_from_index(movies=movies, index=i))
+
+    print(f'recommendation time {time.time() - t1}')

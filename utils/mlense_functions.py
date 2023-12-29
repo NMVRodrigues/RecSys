@@ -1,6 +1,7 @@
 import pandas
 import pandas as pd
 import os
+import re
 
 from .utils import damped_mean, levenshtein_distance
 
@@ -17,11 +18,21 @@ def fix_ml(movies:pd.DataFrame) -> pd.DataFrame:
     # create new column for the years
     movies['year'] = [0]*movies.index
 
+    # remove all movies that do not have a release year
+    movies = movies[movies['title'].str.contains(r'\((\d{4})\)')]
+
+    '''
     for ind in movies.index:
         #movies['year'][ind] = movies['title'][ind].split(' (')[-1][:-1]
         #movies['title'][ind] = movies['title'][ind].split(' (')[0]
         movies.loc[ind, 'year'] = movies['title'][ind].split(' (')[-1][:-1]
         movies.loc[ind, 'title'] = movies['title'][ind].split(' (')[0]
+    '''
+    # create new column for the years
+    movies['year'] = movies['title'].apply(lambda title: int(re.findall(r"\((\d{4})\)", title)[0]))
+
+    # remove parentheses from title
+    movies['title'] = movies['title'].apply(lambda title: title.split(' (')[0])
 
     movies = movies[~(movies['genres'] == '(no genres listed)')].reset_index(drop=True)
 
