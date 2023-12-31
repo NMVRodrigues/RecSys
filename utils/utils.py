@@ -53,6 +53,7 @@ def levenshtein_distance_manual(s1: str, s2: str):
     return dp[m, n]
 
 
-def levenshtein_distance(s1: str,s2: str):
-   return fuzz.ratio(s1, s2)
+def levenshtein_distance(s1: str, s2: str):
+    # ratio [0-100], 100 perfect match
+    return fuzz.ratio(s1, s2)
 
