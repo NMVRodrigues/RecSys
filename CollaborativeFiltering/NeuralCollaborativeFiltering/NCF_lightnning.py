@@ -6,6 +6,7 @@ import sys
 import random
 import argparse
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import lightning as L
 from sklearn.preprocessing import LabelEncoder
@@ -101,72 +102,37 @@ class NCF(nn.Module):
         prediction = self.output(x)
         return prediction
 
-class LitAutoEncoder(L.LightningModule):
-    def __init__(self, encoder, decoder):
+class NCFRec(L.LightningModule):
+    def __init__(self, ncf):
         super().__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+        self.ncf = ncf
 
     def training_step(self, batch, batch_idx):
         # training_step defines the train loop.
-        x, _ = batch
-        x = x.view(x.size(0), -1)
-        z = self.encoder(x)
-        x_hat = self.decoder(z)
-        loss = F.mse_loss(x_hat, x)
+
+        user = batch['user']
+        item = batch['item']
+        rating = batch['rating'].float()
+
+        prediction = self.ncf(user, item)
+        loss = F.mse_loss(prediction.squeeze(), rating)
+        
         return loss
+    
+    def validation_step(self, batch, batch_idx):
+        user = batch['user']
+        item = batch['item']
+        rating = batch['rating'].float()
+
+        prediction = self.ncf(user, item)
+        val_loss = F.mse_loss(prediction.squeeze(), rating)
+        self.log("val_loss", val_loss)
+        return val_loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
         return optimizer
 
-def train_model(model, train_loader, criterion, optimizer, device):
-    model.train()
-    total_loss = 0
-    predictions = []
-    actuals = []
-    
-    for batch in train_loader:
-        user = batch['user'].to(device)
-        item = batch['item'].to(device)
-        rating = batch['rating'].to(device).float()
-        
-        # Forward pass
-        prediction = model(user, item)
-        loss = criterion(prediction.squeeze(), rating)
-        
-        # Backward pass
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-        
-        predictions.extend(prediction.squeeze().detach().cpu().numpy())
-        actuals.extend(rating.detach().cpu().numpy())
-    
-    return total_loss / len(train_loader), predictions, actuals
-
-def evaluate_model(model, test_loader, criterion, device):
-    model.eval()
-    total_loss = 0
-    predictions = []
-    actuals = []
-    
-    with torch.no_grad():
-        for batch in test_loader:
-            user = batch['user'].to(device)
-            item = batch['item'].to(device)
-            rating = batch['rating'].to(device).float()
-            
-            prediction = model(user, item)
-            loss = criterion(prediction.squeeze(), rating)
-            total_loss += loss.item()
-            
-            predictions.extend(prediction.squeeze().cpu().numpy())
-            actuals.extend(rating.cpu().numpy())
-    
-    return total_loss / len(test_loader), predictions, actuals
 
 def predict_rating(model, user_id, item_id, device):
     """
@@ -235,46 +201,12 @@ def main():
     num_items = len(item_encoder.classes_)
     embedding_size = 32
     
-    model = NCF(num_users, num_items, embedding_size).to(device)
-    
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
-    
-    num_epochs = 65
-    print("Starting training...")
-    with tqdm(total=num_epochs) as pbar:
-        for epoch in range(num_epochs):
-            train_loss, train_pred, train_actual = train_model(model, train_loader, criterion, optimizer, device)
-            test_loss, test_pred, test_actual = evaluate_model(model, test_loader, criterion, device)
-        
-            train_rmse = np.sqrt(mean_squared_error(train_actual, train_pred))
-            train_mae = mean_absolute_error(train_actual, train_pred)
-            test_rmse = np.sqrt(mean_squared_error(test_actual, test_pred))
-            test_mae = mean_absolute_error(test_actual, test_pred)
-            
-            pbar.set_description(f"Train Loss: {train_loss:.4f}, Val Loss: {test_loss:.4f}")
-            pbar.update(1)
+    # model
+    model = NCFRec(NCF(num_users, num_items, embedding_size))
 
-            # Print metrics for history, TODO: store them on a dict and print the best main metric
-            tqdm.write(f"Epoch {epoch + 1}: Train Loss = {train_loss:.4f}, Val Loss = {test_loss:.4f}, Val rmse = {test_rmse:.4f}, Val mae = {test_mae:.4f}")
-
-
-    # Inference examples
-    print("\nPerforming Inference:")
-    
-    # Example 1: Predict rating for a specific user-item pair
-    sample_user_id = 42
-    sample_item_id = 10
-    predicted_rating = predict_rating(model, sample_user_id, sample_item_id, device)
-    print(f"Predicted rating for User {sample_user_id} and Item {sample_item_id}: {predicted_rating:.2f}")
-    
-    # Example 2: Get top 5 recommendations for a user
-    sample_user_id = 42
-    top_n = 5
-    recommendations = get_top_n_recommendations(model, sample_user_id, top_n, num_items, device)
-    print(f"\nTop {top_n} recommendations for User {sample_user_id}:")
-    for item_id, pred_rating in recommendations:
-        print(f"Item {item_id}: Predicted rating {pred_rating:.2f}")
+    # train model
+    trainer = L.Trainer(max_epochs=65, accelerator="auto", devices="auto")
+    trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=test_loader)
 
 if __name__ == "__main__":
     main()
