@@ -1,6 +1,7 @@
-import pandas
 import pandas as pd
+import numpy as np
 import os
+import random
 import re
 import warnings
 warnings.filterwarnings('ignore')
@@ -75,3 +76,48 @@ def find_closest_title(movies: pd.DataFrame, title: str):
     distance_score = sorted_leven_scores[0][1]
 
     return closest_title, distance_score
+
+def get_user_split(df, test_ratio=0.2):
+    """
+    Split users into train and test sets
+    """
+    unique_users = df['user_id'].unique()
+    test_size = int(len(unique_users) * test_ratio)
+    
+    # Randomly select users for test set
+    test_users = np.random.choice(unique_users, size=test_size, replace=False)
+    
+    train_data = df[~df['user_id'].isin(test_users)]
+    test_data = df[df['user_id'].isin(test_users)]
+    
+    return train_data, test_data
+
+def get_user_item_split(df, test_ratio=0.2):
+    """
+    Split interactions for each user into train and test sets
+    """
+    train_data = []
+    test_data = []
+    
+    # Group by user
+    user_grouped = df.groupby('user_id')
+    
+    for user_id, interactions in user_grouped:
+        interactions = interactions.values.tolist()
+        
+        # If user has only one interaction, put it in training
+        if len(interactions) == 1:
+            train_data.extend(interactions)
+            continue
+            
+        # Randomly select interactions for test
+        n_test_items = max(1, int(len(interactions) * test_ratio))
+        test_interactions = random.sample(interactions, n_test_items)
+        
+        # Remaining interactions go to train
+        train_interactions = [i for i in interactions if i not in test_interactions]
+        
+        train_data.extend(train_interactions)
+        test_data.extend(test_interactions)
+    
+    return pd.DataFrame(train_data, columns=df.columns), pd.DataFrame(test_data, columns=df.columns)

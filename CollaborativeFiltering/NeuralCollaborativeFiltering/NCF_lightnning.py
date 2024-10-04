@@ -7,6 +7,7 @@ import random
 import argparse
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+import lightning as L
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tqdm import tqdm
@@ -99,6 +100,25 @@ class NCF(nn.Module):
         x = self.relu(self.fc3(x))
         prediction = self.output(x)
         return prediction
+
+class LitAutoEncoder(L.LightningModule):
+    def __init__(self, encoder, decoder):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def training_step(self, batch, batch_idx):
+        # training_step defines the train loop.
+        x, _ = batch
+        x = x.view(x.size(0), -1)
+        z = self.encoder(x)
+        x_hat = self.decoder(z)
+        loss = F.mse_loss(x_hat, x)
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
 
 def train_model(model, train_loader, criterion, optimizer, device):
     model.train()
