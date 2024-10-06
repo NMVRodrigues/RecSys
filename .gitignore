@@ -80,6 +80,7 @@ target/
 
 # Jupyter Notebook
 .lightning_logs
+lightning_logs/
 
 # IPython
 profile_default/
