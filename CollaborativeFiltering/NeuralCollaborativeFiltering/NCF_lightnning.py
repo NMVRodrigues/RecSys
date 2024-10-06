@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import lightning as L
+import torchmetrics
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tqdm import tqdm
@@ -50,6 +51,10 @@ def prepare_dataset(df, user_encoder=None, item_encoder=None):
         # Handle items not seen during training
         df['item_encoded'] = df['item_id'].apply(
             lambda x: item_encoder.transform([x])[0] if x in item_encoder.classes_ else -1
+        )
+
+    df['rating'] = df['item_id'].apply(
+            lambda x: 0 if x < 3.5 else 1
         )
     
     return df, user_encoder, item_encoder
@@ -107,27 +112,29 @@ class NCFRec(L.LightningModule):
         super().__init__()
         self.ncf = ncf
 
-    def training_step(self, batch, batch_idx):
-        # training_step defines the train loop.
-
+    def _shared_step(self, batch):
         user = batch['user']
         item = batch['item']
         rating = batch['rating'].float()
 
-        prediction = self.ncf(user, item)
-        loss = F.mse_loss(prediction.squeeze(), rating)
+        logits = self.ncf(user, item).squeeze()
+
+        loss = F.cross_entropy(logits, rating)
+        predicted_labels = torch.sigmoid(logits)
+        return loss, rating, predicted_labels
+
+    def training_step(self, batch, batch_idx):
+        # training_step defines the train loop.
+
+        loss, rating, predicted_labels = self._shared_step(batch)
         
         return loss
     
     def validation_step(self, batch, batch_idx):
-        user = batch['user']
-        item = batch['item']
-        rating = batch['rating'].float()
-
-        prediction = self.ncf(user, item)
-        val_loss = F.mse_loss(prediction.squeeze(), rating)
-        self.log("val_loss", val_loss)
-        return val_loss
+        
+        loss, rating, predicted_labels = self._shared_step(batch)
+        self.log("val_loss", loss)
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
@@ -205,7 +212,7 @@ def main():
     model = NCFRec(NCF(num_users, num_items, embedding_size))
 
     # train model
-    trainer = L.Trainer(max_epochs=65, accelerator="auto", devices="auto")
+    trainer = L.Trainer(max_epochs=15, accelerator="auto", devices="auto")
     trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=test_loader)
 
 if __name__ == "__main__":
