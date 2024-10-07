@@ -53,7 +53,7 @@ def prepare_dataset(df, user_encoder=None, item_encoder=None):
             lambda x: item_encoder.transform([x])[0] if x in item_encoder.classes_ else -1
         )
 
-    df['rating'] = df['item_id'].apply(
+    df['rating'] = df['rating'].apply(
             lambda x: 0 if x < 3.5 else 1
         )
     
@@ -91,19 +91,32 @@ class NCF(nn.Module):
         super(NCF, self).__init__()
         self.user_embedding = nn.Embedding(num_users, embedding_size)
         self.item_embedding = nn.Embedding(num_items, embedding_size)
-        self.fc1 = nn.Linear(embedding_size * 2, 64)
-        self.fc2 = nn.Linear(64, 32)
-        self.fc3 = nn.Linear(32, 16)
-        self.output = nn.Linear(16, 1)
+
         self.relu = nn.ReLU()
+
+        self.mlp = nn.Sequential(
+            nn.Linear(embedding_size * 2, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 16),
+            nn.ReLU(),
+        )
+        self.output = nn.Linear(16+embedding_size, 1)
+
+
         
     def forward(self, user_input, item_input):
         user_embedded = self.user_embedding(user_input)
         item_embedded = self.item_embedding(item_input)
         vector = torch.cat([user_embedded, item_embedded], dim=-1)
-        x = self.relu(self.fc1(vector))
-        x = self.relu(self.fc2(x))
-        x = self.relu(self.fc3(x))
+
+        gmf = user_embedded * item_embedded
+
+        mlp = self.mlp(vector)
+
+        x = torch.cat([gmf, mlp], dim=-1)
+
         prediction = self.output(x)
         return prediction
 
@@ -111,6 +124,11 @@ class NCFRec(L.LightningModule):
     def __init__(self, ncf):
         super().__init__()
         self.ncf = ncf
+
+        self.train_acc = torchmetrics.Accuracy(task="binary")
+        self.val_acc = torchmetrics.Accuracy(task="binary")
+
+        #self.test_acc = torchmetrics.Accuracy(task="binary")
 
     def _shared_step(self, batch):
         user = batch['user']
@@ -127,13 +145,22 @@ class NCFRec(L.LightningModule):
         # training_step defines the train loop.
 
         loss, rating, predicted_labels = self._shared_step(batch)
+
+        self.train_acc(predicted_labels, rating)
+        self.log_dict(
+            {"train_loss": loss, "train_acc": self.train_acc}, prog_bar=True, on_epoch=True, on_step=False
+        )
         
         return loss
     
     def validation_step(self, batch, batch_idx):
         
         loss, rating, predicted_labels = self._shared_step(batch)
-        self.log("val_loss", loss)
+
+        self.val_acc(predicted_labels, rating)
+        self.log_dict(
+            {"val_loss": loss, "val_acc": self.val_acc}, prog_bar=True
+        )
         return loss
 
     def configure_optimizers(self):
